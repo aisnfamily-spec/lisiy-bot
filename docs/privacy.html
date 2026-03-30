@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy — Лисий Bot</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.7; padding: 40px 20px; }
+    .container { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 28px; color: #fb923c; margin-bottom: 8px; }
+    .subtitle { color: #94a3b8; font-size: 14px; margin-bottom: 32px; }
+    h2 { font-size: 18px; color: #f8fafc; margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #1e293b; }
+    p, li { font-size: 15px; color: #cbd5e1; margin-bottom: 10px; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 6px; }
+    a { color: #fb923c; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .badge { display: inline-block; background: #ea580c; color: #fff; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; margin-bottom: 24px; }
+    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #1e293b; color: #64748b; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Privacy Policy</h1>
+    <div class="badge">Лисий Bot — YouTube AI Commentator</div>
+    <p class="subtitle">Last updated: March 30, 2026</p>
+
+    <h2>1. Overview</h2>
+    <p>Лисий Bot is a free Chrome extension that helps YouTube creators respond to comments using AI-generated replies. We are committed to protecting your privacy and being transparent about what data the extension handles.</p>
+
+    <h2>2. Data We Collect</h2>
+    <p><strong>We do not collect, store, or transmit any personal data to our servers.</strong> The extension operates entirely within your browser.</p>
+
+    <h2>3. Data Processed Locally</h2>
+    <p>The following data is stored locally in your browser using Chrome Storage API and never leaves your device:</p>
+    <ul>
+      <li><strong>Groq API keys</strong> — entered by you to enable AI replies. Stored locally, never shared.</li>
+      <li><strong>Extension settings</strong> — reply style, language preference, token limit. Stored locally.</li>
+    </ul>
+
+    <h2>4. Data Sent to Third Parties</h2>
+    <p>When you use the AI reply feature, the extension sends the following to the <a href="https://groq.com" target="_blank">Groq API</a>:</p>
+    <ul>
+      <li>The text of the YouTube comment you are replying to</li>
+      <li>The video title and channel name (for context)</li>
+      <li>Your Groq API key (for authentication)</li>
+    </ul>
+    <p>This data is sent directly from your browser to Groq's servers. We do not proxy, log, or store this data. Groq's privacy policy applies to data they receive: <a href="https://groq.com/privacy-policy/" target="_blank">groq.com/privacy-policy</a></p>
+
+    <h2>5. YouTube Data</h2>
+    <p>The extension reads the following from YouTube pages you visit:</p>
+    <ul>
+      <li>Comment text (to generate AI replies)</li>
+      <li>Video title and channel name (for AI context)</li>
+      <li>Comment count (to display in the panel)</li>
+    </ul>
+    <p>This data is processed locally in your browser and is only sent to the Groq API when you explicitly trigger a reply. The extension does not access your YouTube account, credentials, watch history, or any other YouTube data.</p>
+
+    <h2>6. Permissions Explained</h2>
+    <ul>
+      <li><strong>youtube.com, studio.youtube.com</strong> — to inject the reply panel and AI buttons on comment sections</li>
+      <li><strong>api.groq.com</strong> — to send comment text for AI reply generation</li>
+      <li><strong>storage</strong> — to save your settings and API keys locally</li>
+      <li><strong>activeTab</strong> — to toggle the extension panel from the popup</li>
+    </ul>
+
+    <h2>7. No Tracking</h2>
+    <p>The extension does not use any analytics, tracking pixels, cookies, or telemetry. There are no ads. We do not collect usage statistics.</p>
+
+    <h2>8. Data Security</h2>
+    <p>All data is stored locally in your browser's Chrome Storage. API keys are never transmitted to any server other than the Groq API for authentication purposes.</p>
+
+    <h2>9. Children's Privacy</h2>
+    <p>The extension is not directed at children under 13. We do not knowingly collect data from children.</p>
+
+    <h2>10. Changes to This Policy</h2>
+    <p>We may update this policy from time to time. Changes will be reflected on this page with an updated date.</p>
+
+    <h2>11. Contact</h2>
+    <p>If you have questions about this privacy policy, contact us via Telegram: <a href="https://t.me/diamondehead" target="_blank">@diamondehead</a></p>
+
+    <div class="footer">
+      &copy; 2026 Лисий Bot. Open source on <a href="https://github.com/aisnfamily-spec/lisiy-bot" target="_blank">GitHub</a>.
+    </div>
+  </div>
+</body>
+</html>
