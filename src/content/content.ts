@@ -642,7 +642,12 @@ function createPanel() {
       padding:9px 12px 8px;font-weight:700;font-size:13px;
       border-bottom:1px solid #1f2937;cursor:move;border-radius:12px 12px 0 0;user-select:none;">
       <span>✦ Лисий з YouTube</span>
-      <button id="pm" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:16px;line-height:1;">−</button>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button id="pgo-mini" style="display:none;padding:3px 10px;border-radius:6px;border:none;
+          background:linear-gradient(135deg,#ea580c,#c2410c);color:#fff;font-size:10px;
+          font-weight:700;cursor:pointer;line-height:1;">GO</button>
+        <button id="pm" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:16px;line-height:1;">−</button>
+      </div>
     </div>
     <div id="pb">
       <div style="display:flex;border-bottom:1px solid #1f2937;padding:0 4px;">
@@ -730,35 +735,39 @@ function createPanel() {
         </div>
         <p style="margin:6px 0 0;color:#4b5563;font-size:10px;">Ключі чергуються автоматично. При ліміті — наступний.</p>
       </div>
-      <div style="padding:6px 12px 10px;border-top:1px solid #1f2937;display:flex;gap:6px;">
+      <div style="padding:6px 12px 10px;border-top:1px solid #1f2937;">
         <a href="https://t.me/diamondehead" target="_blank" rel="noopener"
-          style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px;
-          padding:5px;border-radius:6px;background:#1f2937;color:#9ca3af;font-size:10px;
-          text-decoration:none;cursor:pointer;transition:background .15s,color .15s;"
-          onmouseover="this.style.background='#374151';this.style.color='#f9fafb'"
-          onmouseout="this.style.background='#1f2937';this.style.color='#9ca3af'">
-          ✈ Telegram
-        </a>
-        <a href="https://www.youtube.com/@cryptonikaua?sub_confirmation=1" target="_blank" rel="noopener"
-          style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px;
-          padding:5px;border-radius:6px;background:linear-gradient(135deg,#ea580c,#c2410c);
+          style="display:flex;align-items:center;justify-content:center;gap:4px;
+          padding:6px;border-radius:6px;background:linear-gradient(135deg,#ea580c,#c2410c);
           color:#fff;font-size:10px;font-weight:600;text-decoration:none;cursor:pointer;
           transition:opacity .15s;"
           onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-          ▶ Підписатись
+          ✈ Підписатись на Telegram
         </a>
       </div>
     </div>`;
   document.body.appendChild(p);
 
-  // Minimize
+  // Minimize + GO button
   const body = p.querySelector<HTMLElement>("#pb")!;
   const minB = p.querySelector<HTMLElement>("#pm")!;
+  const goMini = p.querySelector<HTMLButtonElement>("#pgo-mini")!;
   let mini = false;
   minB.addEventListener("click", () => {
     mini = !mini;
     body.style.display = mini ? "none" : "";
     minB.textContent = mini ? "+" : "−";
+    goMini.style.display = mini ? "" : "none";
+  });
+  goMini.addEventListener("click", (e) => {
+    e.stopPropagation();
+    // Expand and trigger auto
+    mini = false;
+    body.style.display = "";
+    minB.textContent = "−";
+    goMini.style.display = "none";
+    // Click the main GO button
+    p.querySelector<HTMLButtonElement>("#pgo")?.click();
   });
 
   // Drag
