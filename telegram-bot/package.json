@@ -1,0 +1,13 @@
+{
+  "name": "lisiy-bot-telegram",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "grammy": "^1.21.0",
+    "@supabase/supabase-js": "^2.39.0"
+  }
+}

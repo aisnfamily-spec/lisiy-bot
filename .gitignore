@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+telegram-bot/node_modules/
+telegram-bot/.env
+supabase/.env
