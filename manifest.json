@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Лисий Bot — YouTube Commentator",
+  "name": "Лисий з YouTube — Comment Assistant",
   "version": "1.1.0",
-  "description": "AI-powered YouTube comment bot — автовідповіді на коментарі",
+  "description": "AI-powered comment assistant — helps YouTube creators craft replies faster",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -16,7 +16,7 @@
   ],
   "action": {
     "default_popup": "src/popup/index.html",
-    "default_title": "Лисий Bot"
+    "default_title": "Лисий"
   },
   "background": {
     "service_worker": "src/background/background.ts",

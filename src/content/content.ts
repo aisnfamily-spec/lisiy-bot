@@ -79,7 +79,7 @@ function dbg(msg: string) {
   const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
   _logs.push(line);
   if (_logs.length > 300) _logs.shift();
-  console.log("[AI Reply]", msg);
+  console.log("[Лисий]", msg);
   _panelLog?.(msg);
 }
 
@@ -641,7 +641,7 @@ function createPanel() {
     <div id="ph" style="display:flex;align-items:center;justify-content:space-between;
       padding:9px 12px 8px;font-weight:700;font-size:13px;
       border-bottom:1px solid #1f2937;cursor:move;border-radius:12px 12px 0 0;user-select:none;">
-      <span>✦ Лисий Bot</span>
+      <span>✦ Лисий з YouTube</span>
       <button id="pm" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:16px;line-height:1;">−</button>
     </div>
     <div id="pb">
@@ -978,7 +978,7 @@ function init() {
   injectStyles();
   createPanel();
   scanAndInject();
-  console.log("[AI Reply] ready");
+  console.log("[Лисий] ready");
 }
 
 window.addEventListener("yt-navigate-finish", () => setTimeout(scanAndInject, 1000));
