@@ -2,13 +2,23 @@
 
 type StyleId = 'bait' | 'gentle' | 'neutral' | 'thanks' | 'random' | 'custom';
 type LangId  = 'auto' | 'uk' | 'ru' | 'en' | 'es' | 'pt' | 'de' | 'it' | 'fr';
+type ProviderId = 'groq' | 'openai' | 'openrouter' | 'custom';
+
+const PROVIDERS: Record<Exclude<ProviderId,'custom'>, {label:string; endpoint:string; model:string; placeholder:string}> = {
+  groq:       { label:'Groq',       endpoint:'https://api.groq.com/openai/v1/chat/completions',  model:'llama-3.3-70b-versatile',                placeholder:'gsk_...' },
+  openai:     { label:'OpenAI',     endpoint:'https://api.openai.com/v1/chat/completions',        model:'gpt-4o-mini',                            placeholder:'sk-...' },
+  openrouter: { label:'OpenRouter', endpoint:'https://openrouter.ai/api/v1/chat/completions',     model:'meta-llama/llama-3.3-70b-instruct',      placeholder:'sk-or-...' },
+};
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
-let GROQ_KEYS: string[] = [];
-let groqKeyIdx = 0;
+let API_KEYS: string[] = [];
+let apiKeyIdx = 0;
 const keyLimitedUntil = new Map<number, number>();
 
+let PROVIDER_ID: ProviderId = 'groq';
+let CUSTOM_ENDPOINT = '';
+let CUSTOM_MODEL = '';
 let SEL_STYLE: StyleId = 'neutral';
 let CUSTOM_PROMPT = '';
 let FILTER_OFFTOPIC = true;
@@ -19,28 +29,34 @@ let refreshKeysUI: (() => void) | null = null;
 let updateCommentCount: (() => void) | null = null;
 
 function loadSettings() {
-  chrome.storage.local.get(['groqKeys','selectedStyle','customPrompt','filterOffTopic','replyLang','maxTokens'], r => {
-    GROQ_KEYS       = Array.isArray(r.groqKeys) ? r.groqKeys : [];
+  chrome.storage.local.get(['groqKeys','selectedStyle','customPrompt','filterOffTopic','replyLang','maxTokens','providerId','customEndpoint','customModel'], r => {
+    API_KEYS        = Array.isArray(r.groqKeys) ? r.groqKeys : [];
     SEL_STYLE       = r.selectedStyle  || 'neutral';
     CUSTOM_PROMPT   = r.customPrompt   || '';
     FILTER_OFFTOPIC = r.filterOffTopic !== false;
     REPLY_LANG      = r.replyLang      || 'auto';
     MAX_TOKENS      = r.maxTokens      || 150;
+    PROVIDER_ID     = r.providerId     || 'groq';
+    CUSTOM_ENDPOINT = r.customEndpoint || '';
+    CUSTOM_MODEL    = r.customModel    || '';
     refreshKeysUI?.();
   });
 }
 loadSettings();
 
 chrome.storage.onChanged.addListener(ch => {
-  if (ch.groqKeys)       { GROQ_KEYS = ch.groqKeys.newValue || []; refreshKeysUI?.(); }
-  if (ch.selectedStyle)  SEL_STYLE       = ch.selectedStyle.newValue  || 'neutral';
-  if (ch.customPrompt)   CUSTOM_PROMPT   = ch.customPrompt.newValue   || '';
-  if (ch.filterOffTopic) FILTER_OFFTOPIC = ch.filterOffTopic.newValue !== false;
-  if (ch.replyLang)      REPLY_LANG      = ch.replyLang.newValue      || 'auto';
-  if (ch.maxTokens)     MAX_TOKENS      = ch.maxTokens.newValue     || 150;
+  if (ch.groqKeys)        { API_KEYS = ch.groqKeys.newValue || []; refreshKeysUI?.(); }
+  if (ch.selectedStyle)   SEL_STYLE       = ch.selectedStyle.newValue  || 'neutral';
+  if (ch.customPrompt)    CUSTOM_PROMPT   = ch.customPrompt.newValue   || '';
+  if (ch.filterOffTopic)  FILTER_OFFTOPIC = ch.filterOffTopic.newValue !== false;
+  if (ch.replyLang)       REPLY_LANG      = ch.replyLang.newValue      || 'auto';
+  if (ch.maxTokens)       MAX_TOKENS      = ch.maxTokens.newValue      || 150;
+  if (ch.providerId)      PROVIDER_ID     = ch.providerId.newValue     || 'groq';
+  if (ch.customEndpoint)  CUSTOM_ENDPOINT = ch.customEndpoint.newValue || '';
+  if (ch.customModel)     CUSTOM_MODEL    = ch.customModel.newValue    || '';
 });
 
-function saveSettings(partial: Partial<{groqKeys:string[];selectedStyle:StyleId;customPrompt:string;filterOffTopic:boolean;replyLang:LangId;maxTokens:number}>) {
+function saveSettings(partial: Partial<{groqKeys:string[];selectedStyle:StyleId;customPrompt:string;filterOffTopic:boolean;replyLang:LangId;maxTokens:number;providerId:ProviderId;customEndpoint:string;customModel:string}>) {
   chrome.storage.local.set(partial);
 }
 
@@ -83,36 +99,60 @@ function dbg(msg: string) {
   _panelLog?.(msg);
 }
 
-// ─── Groq Key Rotation ────────────────────────────────────────────────────────
+// ─── Analytics ────────────────────────────────────────────────────────────────
+
+const _SB_URL = "https://awmlewuljbcsxctwzmuc.supabase.co";
+const _SB_KEY = "sb_publishable_ylCXjr3D28fA1QYwRObu2A_Pl2P2vJ6";
+let _reportedChannel = "";
+
+function reportChannel() {
+  const ch = document.querySelector<HTMLElement>("#entity-name")?.innerText?.trim()
+    || document.querySelector<HTMLElement>("ytd-video-owner-renderer #channel-name a")?.innerText?.trim();
+  if (!ch || ch === _reportedChannel) return;
+  _reportedChannel = ch;
+  fetch(`${_SB_URL}/rest/v1/channel_usage`, {
+    method: "POST",
+    headers: {
+      "apikey": _SB_KEY,
+      "Authorization": `Bearer ${_SB_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "resolution=merge-duplicates",
+    },
+    body: JSON.stringify({ channel_name: ch, last_seen_at: new Date().toISOString() }),
+  }).catch(() => {});
+}
+
+// ─── API Key Rotation ─────────────────────────────────────────────────────────
 
 function getNextKey(): string | null {
-  if (!GROQ_KEYS.length) return null;
+  if (!API_KEYS.length) return null;
   const now = Date.now();
-  for (let i = 0; i < GROQ_KEYS.length; i++) {
-    const idx = (groqKeyIdx + i) % GROQ_KEYS.length;
+  for (let i = 0; i < API_KEYS.length; i++) {
+    const idx = (apiKeyIdx + i) % API_KEYS.length;
     if ((keyLimitedUntil.get(idx) || 0) < now) {
-      groqKeyIdx = (idx + 1) % GROQ_KEYS.length;
-      return GROQ_KEYS[idx];
+      apiKeyIdx = (idx + 1) % API_KEYS.length;
+      return API_KEYS[idx];
     }
   }
   // All limited — use soonest-expiring
   let best = 0, bestExp = Infinity;
   keyLimitedUntil.forEach((exp, idx) => { if (exp < bestExp) { bestExp = exp; best = idx; } });
-  groqKeyIdx = (best + 1) % GROQ_KEYS.length;
-  return GROQ_KEYS[best];
+  apiKeyIdx = (best + 1) % API_KEYS.length;
+  return API_KEYS[best];
 }
 
 function markKeyLimited(key: string) {
-  const idx = GROQ_KEYS.indexOf(key);
+  const idx = API_KEYS.indexOf(key);
   if (idx === -1) return;
   keyLimitedUntil.set(idx, Date.now() + 65_000);
   dbg(`🔑 Ключ #${idx+1} вичерпано, перемикаю...`);
   refreshKeysUI?.();
 }
 
-// ─── Groq key modal (first-time) ─────────────────────────────────────────────
+// ─── API key modal (first-time) ──────────────────────────────────────────────
 
 function askGroqKey(): Promise<string | null> {
+  const prov = PROVIDER_ID === 'custom' ? { label:'Custom', placeholder:'API key...' } : PROVIDERS[PROVIDER_ID] || PROVIDERS.groq;
   return new Promise(res => {
     const wrap = document.createElement("div");
     wrap.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.65);
@@ -120,9 +160,9 @@ function askGroqKey(): Promise<string | null> {
     wrap.innerHTML = `
       <div style="background:#1f2937;border:1px solid #4b5563;border-radius:14px;
         padding:22px;width:320px;color:#f9fafb;font-family:'YouTube Sans',Roboto,sans-serif;">
-        <p style="margin:0 0 4px;font-size:15px;font-weight:700;">✦ Groq API Key</p>
-        <p style="margin:0 0 14px;font-size:11px;color:#9ca3af;">Безкоштовно на <b>console.groq.com</b><br>Або додай в панелі → вкладка 🔑 Ключі</p>
-        <input id="_k" type="password" placeholder="gsk_..."
+        <p style="margin:0 0 4px;font-size:15px;font-weight:700;">✦ ${prov.label} API Key</p>
+        <p style="margin:0 0 14px;font-size:11px;color:#9ca3af;">Додай ключ для ${prov.label}<br>Або додай в панелі → вкладка 🔑 Ключі</p>
+        <input id="_k" type="password" placeholder="${prov.placeholder}"
           style="width:100%;background:#111827;border:1px solid #374151;border-radius:8px;
           padding:9px 11px;color:#f9fafb;font-size:13px;margin-bottom:12px;box-sizing:border-box;outline:none;"/>
         <div style="display:flex;gap:8px;">
@@ -138,9 +178,9 @@ function askGroqKey(): Promise<string | null> {
     inp.addEventListener("input", () => { btn.disabled = !inp.value.trim(); });
     btn.addEventListener("click", () => {
       const k = inp.value.trim(); if (!k) return;
-      if (GROQ_KEYS.includes(k)) { toast("Цей ключ вже є"); return; }
-      GROQ_KEYS = [...GROQ_KEYS, k];
-      saveSettings({ groqKeys: GROQ_KEYS });
+      if (API_KEYS.includes(k)) { toast("Цей ключ вже є"); return; }
+      API_KEYS = [...API_KEYS, k];
+      saveSettings({ groqKeys: API_KEYS });
       refreshKeysUI?.();
       wrap.remove(); res(k);
     });
@@ -230,35 +270,53 @@ function getVideoTitle() {
   return document.querySelector<HTMLElement>("ytd-watch-metadata h1 yt-formatted-string")?.innerText?.trim()
     || document.title.replace(/ - YouTube.*/, "").trim() || "";
 }
+function getVideoDescription(): string {
+  const el = document.querySelector<HTMLElement>(
+    "ytd-text-inline-expander > yt-attributed-string, ytd-text-inline-expander .content, #description-inline-expander yt-attributed-string"
+  );
+  const raw = el?.innerText?.trim() || "";
+  return raw.slice(0, 300);
+}
 
-async function groqGenerate(commentText: string, attempt = 0): Promise<string | null> {
-  if (!GROQ_KEYS.length) {
+function getProviderConfig(): { endpoint: string; model: string } {
+  if (PROVIDER_ID === 'custom') {
+    return { endpoint: CUSTOM_ENDPOINT, model: CUSTOM_MODEL };
+  }
+  const preset = PROVIDERS[PROVIDER_ID] || PROVIDERS.groq;
+  return { endpoint: preset.endpoint, model: preset.model };
+}
+
+async function aiGenerate(commentText: string, attempt = 0): Promise<string | null> {
+  if (!API_KEYS.length) {
     const k = await askGroqKey();
     if (!k) return null;
-    return groqGenerate(commentText, 0);
+    return aiGenerate(commentText, 0);
   }
+  const { endpoint, model } = getProviderConfig();
+  if (!endpoint || !model) throw new Error("Не вказано endpoint або модель");
   const key = getNextKey()!;
   const isAuto = REPLY_LANG === 'auto';
   const lang = isAuto ? detectLang(commentText) : REPLY_LANG;
   const vt   = getVideoTitle();
+  const desc = getVideoDescription();
   const ch   = getChannelName();
   const fl = FILTER_OFFTOPIC
     ? "\n- If the comment is completely off-topic for the video or channel — reply ONLY with the word SKIP."
     : "";
-  const langInstruction = isAuto
-    ? "IMPORTANT: Reply in the SAME language as the comment. Detect the comment language and match it exactly."
-    : ({
-        uk: "Reply ONLY in Ukrainian.", en: "Reply ONLY in English.", ru: "Reply ONLY in Russian.",
-        es: "Reply ONLY in Spanish.", pt: "Reply ONLY in Portuguese.", de: "Reply ONLY in German.",
-        it: "Reply ONLY in Italian.", fr: "Reply ONLY in French.",
-      } as Record<string,string>)[lang] || `Reply ONLY in ${lang}.`;
-  const sys = `You are a YouTube channel assistant for "${ch}".${vt ? `\nVideo: "${vt}"` : ""}\n${pickStylePrompt(lang)}${fl}\n${langInstruction}`;
+  const langNames: Record<string,string> = {
+    uk: "Ukrainian", en: "English", ru: "Russian",
+    es: "Spanish", pt: "Portuguese", de: "German",
+    it: "Italian", fr: "French",
+  };
+  const langName = langNames[lang] || lang;
+  const langInstruction = `CRITICAL: You MUST reply ONLY in ${langName}. Do NOT use any other language regardless of the video title or channel name.`;
+  const sys = `You are a YouTube channel assistant for "${ch}".${vt ? `\nVideo: "${vt}"` : ""}${desc ? `\nVideo description: "${desc}"` : ""}\n${pickStylePrompt(lang)}${fl}\n${langInstruction}`;
 
-  const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const r = await fetch(endpoint, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
+      model,
       messages: [
         { role:"system", content: sys },
         { role:"user",   content: `Reply to this comment:\n"${commentText}"` },
@@ -269,12 +327,12 @@ async function groqGenerate(commentText: string, attempt = 0): Promise<string | 
 
   if (r.status === 429) {
     markKeyLimited(key);
-    if (attempt < GROQ_KEYS.length) { await sleep(600); return groqGenerate(commentText, attempt+1); }
-    throw new Error("Всі Groq ключі вичерпали ліміт");
+    if (attempt < API_KEYS.length) { await sleep(600); return aiGenerate(commentText, attempt+1); }
+    throw new Error("Всі API ключі вичерпали ліміт");
   }
   if (!r.ok) {
     const err = await r.json().catch(() => ({})) as {error?:{message?:string}};
-    throw new Error(err?.error?.message || `Groq ${r.status}`);
+    throw new Error(err?.error?.message || `API ${r.status}`);
   }
   const data = await r.json();
   const out  = data.choices?.[0]?.message?.content?.trim() || "";
@@ -447,13 +505,20 @@ function getCommentText(el: Element): string {
 
 function getUnansweredComments(): Element[] {
   if (IS_STUDIO) {
+    // Studio: filter threads where "Нет ответов" / "No replies" is shown, or reply count is 0
     return Array.from(document.querySelectorAll("ytcp-comment-thread"))
-      .filter(t => t.querySelectorAll("ytcp-comment").length <= 1);
+      .filter(t => {
+        // Check for "0 replies" or "Нет ответов" text
+        const replyText = t.querySelector("#reply-count, .reply-count, [slot='reply-count']")?.textContent?.trim() || "";
+        if (/^0|нет|no/i.test(replyText)) return true;
+        // Fallback: count ytcp-comment elements (1 = only the original, no replies)
+        return t.querySelectorAll("ytcp-comment").length <= 1;
+      });
   }
   return Array.from(document.querySelectorAll("ytd-comment-thread-renderer")).filter(t => {
     const repliesEl = t.querySelector("ytd-comment-replies-renderer");
     if (!repliesEl) return true;
-    return !repliesEl.querySelector("#more-replies, #more-replies-sub-thread, ytd-comment-renderer");
+    return !repliesEl.querySelector("#more-replies, #more-replies-sub-thread, ytd-comment-renderer, ytd-comment-view-model");
   });
 }
 
@@ -471,7 +536,7 @@ async function runAuto(
   autoRunning = true;
   autoStopped = false;
 
-  if (!GROQ_KEYS.length) {
+  if (!API_KEYS.length) {
     const k = await askGroqKey();
     if (!k) { autoRunning = false; onDone(); return; }
   }
@@ -505,10 +570,10 @@ async function runAuto(
 
     log(`✦ Генерую @${author}...`);
     let reply: string | null = null;
-    try { reply = await groqGenerate(text); }
+    try { reply = await aiGenerate(text); }
     catch(e) { log(`✗ ${(e as Error).message}`); await sleep(jitter(4000,1500)); continue; }
 
-    if (!reply) { log(`⏭ Офтопік, пропуск`); continue; }
+    if (!reply) { log(`⏭ @${author}: офтопік, пропуск`); continue; }
     if (autoStopped) break;
 
     log(`⌨ Пишу...`);
@@ -534,13 +599,13 @@ const BTN  = "ai-reply-btn";
 const DONE = "data-ai";
 
 async function onAiBtnClick(btn: HTMLButtonElement, commentEl: Element) {
-  if (!GROQ_KEYS.length) { const k = await askGroqKey(); if (!k) return; }
+  if (!API_KEYS.length) { const k = await askGroqKey(); if (!k) return; }
   const text = getCommentText(commentEl);
   if (!text) { toast("Текст коментаря не знайдено"); return; }
   btn.textContent = "⏳...";
   btn.classList.add("ai-loading");
   try {
-    const reply = await groqGenerate(text);
+    const reply = await aiGenerate(text);
     if (!reply) { toast("Пропущено (офтопік)"); return; }
     await doReply(commentEl, reply);
   } catch(e) {
@@ -725,7 +790,25 @@ function createPanel() {
       </div>
 
       <div id="tab-keys" style="display:none;padding:10px 12px 12px;">
-        <div id="keys-list" style="margin-bottom:8px;max-height:150px;overflow-y:auto;"></div>
+        <div style="margin-bottom:8px;">
+          <label style="color:#9ca3af;font-size:10px;display:block;margin-bottom:4px;">AI Provider</label>
+          <select id="provider-select" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:6px;
+            color:#f9fafb;padding:5px 8px;font-size:11px;outline:none;cursor:pointer;">
+            <option value="groq">Groq (llama-3.3-70b)</option>
+            <option value="openai">OpenAI (gpt-4o-mini)</option>
+            <option value="openrouter">OpenRouter (llama-3.3-70b)</option>
+            <option value="custom">Custom endpoint</option>
+          </select>
+        </div>
+        <div id="custom-provider-fields" style="display:none;margin-bottom:8px;">
+          <input id="custom-endpoint-input" type="text" placeholder="https://api.example.com/v1/chat/completions"
+            style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:6px;
+            color:#f9fafb;padding:5px 8px;font-size:11px;outline:none;margin-bottom:4px;box-sizing:border-box;"/>
+          <input id="custom-model-input" type="text" placeholder="model name"
+            style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:6px;
+            color:#f9fafb;padding:5px 8px;font-size:11px;outline:none;box-sizing:border-box;"/>
+        </div>
+        <div id="keys-list" style="margin-bottom:8px;max-height:120px;overflow-y:auto;"></div>
         <div style="display:flex;gap:6px;">
           <input id="key-input" type="password" placeholder="gsk_..."
             style="flex:1;background:#1f2937;border:1px solid #374151;border-radius:6px;
@@ -761,12 +844,7 @@ function createPanel() {
   });
   goMini.addEventListener("click", (e) => {
     e.stopPropagation();
-    // Expand and trigger auto
-    mini = false;
-    body.style.display = "";
-    minB.textContent = "−";
-    goMini.style.display = "none";
-    // Click the main GO button
+    // Trigger auto without expanding
     p.querySelector<HTMLButtonElement>("#pgo")?.click();
   });
 
@@ -908,20 +986,59 @@ function createPanel() {
   }));
 
   // ── Keys tab ──
-  const keysList  = p.querySelector<HTMLElement>("#keys-list")!;
-  const keyInput  = p.querySelector<HTMLInputElement>("#key-input")!;
-  const keyAddBtn = p.querySelector<HTMLButtonElement>("#key-add")!;
+  const providerSelect   = p.querySelector<HTMLSelectElement>("#provider-select")!;
+  const customFields     = p.querySelector<HTMLElement>("#custom-provider-fields")!;
+  const customEndpointIn = p.querySelector<HTMLInputElement>("#custom-endpoint-input")!;
+  const customModelIn    = p.querySelector<HTMLInputElement>("#custom-model-input")!;
+  const keysList         = p.querySelector<HTMLElement>("#keys-list")!;
+  const keyInput         = p.querySelector<HTMLInputElement>("#key-input")!;
+  const keyAddBtn        = p.querySelector<HTMLButtonElement>("#key-add")!;
+
+  // Provider selector
+  function syncProviderUI() {
+    providerSelect.value = PROVIDER_ID;
+    customFields.style.display = PROVIDER_ID === 'custom' ? '' : 'none';
+    customEndpointIn.value = CUSTOM_ENDPOINT;
+    customModelIn.value = CUSTOM_MODEL;
+    const ph = PROVIDER_ID === 'custom' ? 'API key...' : (PROVIDERS[PROVIDER_ID]||PROVIDERS.groq).placeholder;
+    keyInput.placeholder = ph;
+  }
+  chrome.storage.local.get(['providerId','customEndpoint','customModel'], r => {
+    PROVIDER_ID     = r.providerId     || 'groq';
+    CUSTOM_ENDPOINT = r.customEndpoint || '';
+    CUSTOM_MODEL    = r.customModel    || '';
+    syncProviderUI();
+  });
+
+  providerSelect.addEventListener("change", () => {
+    PROVIDER_ID = providerSelect.value as ProviderId;
+    customFields.style.display = PROVIDER_ID === 'custom' ? '' : 'none';
+    const ph = PROVIDER_ID === 'custom' ? 'API key...' : (PROVIDERS[PROVIDER_ID]||PROVIDERS.groq).placeholder;
+    keyInput.placeholder = ph;
+    // Clear keys when switching provider — different keys for different providers
+    API_KEYS = []; apiKeyIdx = 0; keyLimitedUntil.clear();
+    saveSettings({ providerId: PROVIDER_ID, groqKeys: API_KEYS });
+    refreshKeysUI!();
+  });
+  customEndpointIn.addEventListener("change", () => {
+    CUSTOM_ENDPOINT = customEndpointIn.value.trim();
+    saveSettings({ customEndpoint: CUSTOM_ENDPOINT });
+  });
+  customModelIn.addEventListener("change", () => {
+    CUSTOM_MODEL = customModelIn.value.trim();
+    saveSettings({ customModel: CUSTOM_MODEL });
+  });
 
   refreshKeysUI = () => {
     keysList.innerHTML = "";
-    if (!GROQ_KEYS.length) {
+    if (!API_KEYS.length) {
       keysList.innerHTML = `<p style="color:#4b5563;font-size:10px;margin:0 0 4px;">Ще немає ключів</p>`;
       return;
     }
-    GROQ_KEYS.forEach((k, i) => {
+    API_KEYS.forEach((k, i) => {
       const limited = (keyLimitedUntil.get(i)||0) > Date.now();
-      const active  = ((groqKeyIdx - 1 + GROQ_KEYS.length) % GROQ_KEYS.length) === i;
-      const masked  = k.slice(0,6)+"..."+k.slice(-4);
+      const active  = ((apiKeyIdx - 1 + API_KEYS.length) % API_KEYS.length) === i;
+      const masked  = k.length > 10 ? k.slice(0,6)+"..."+k.slice(-4) : '***';
       const item = document.createElement("div");
       item.className = "ai-key-item";
       item.innerHTML = `
@@ -933,8 +1050,7 @@ function createPanel() {
           <button data-idx="${i}" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:14px;line-height:1;">×</button>
         </div>`;
       item.querySelector("button")!.addEventListener("click", () => {
-        GROQ_KEYS.splice(i,1);
-        // Rebuild limitedUntil map with shifted indices
+        API_KEYS.splice(i,1);
         const newMap = new Map<number, number>();
         keyLimitedUntil.forEach((exp, idx) => {
           if (idx < i) newMap.set(idx, exp);
@@ -942,9 +1058,9 @@ function createPanel() {
         });
         keyLimitedUntil.clear();
         newMap.forEach((exp, idx) => keyLimitedUntil.set(idx, exp));
-        if (groqKeyIdx > i) groqKeyIdx = Math.max(0, groqKeyIdx - 1);
-        else if (groqKeyIdx >= GROQ_KEYS.length && GROQ_KEYS.length) groqKeyIdx = 0;
-        saveSettings({ groqKeys: GROQ_KEYS }); refreshKeysUI!();
+        if (apiKeyIdx > i) apiKeyIdx = Math.max(0, apiKeyIdx - 1);
+        else if (apiKeyIdx >= API_KEYS.length && API_KEYS.length) apiKeyIdx = 0;
+        saveSettings({ groqKeys: API_KEYS }); refreshKeysUI!();
       });
       keysList.appendChild(item);
     });
@@ -953,9 +1069,9 @@ function createPanel() {
 
   keyAddBtn.addEventListener("click", () => {
     const k = keyInput.value.trim();
-    if (!k || !k.startsWith("gsk_")) { toast("⚠ Ключ має починатись з gsk_"); return; }
-    if (GROQ_KEYS.includes(k)) { toast("Цей ключ вже є"); return; }
-    GROQ_KEYS.push(k); saveSettings({ groqKeys: GROQ_KEYS });
+    if (!k) { toast("Введіть API ключ"); return; }
+    if (API_KEYS.includes(k)) { toast("Цей ключ вже є"); return; }
+    API_KEYS.push(k); saveSettings({ groqKeys: API_KEYS });
     keyInput.value = ""; refreshKeysUI!(); toast("✓ Ключ додано");
   });
   keyInput.addEventListener("keydown", e => { if (e.key==="Enter") keyAddBtn.click(); });
@@ -990,7 +1106,7 @@ function init() {
   console.log("[Лисий] ready");
 }
 
-window.addEventListener("yt-navigate-finish", () => setTimeout(scanAndInject, 1000));
+window.addEventListener("yt-navigate-finish", () => { setTimeout(scanAndInject, 1000); setTimeout(reportChannel, 2000); });
 const _ph = history.pushState.bind(history);
 history.pushState = function(...a) { _ph(...a); setTimeout(scanAndInject, 1000); };
 document.readyState === "loading"
